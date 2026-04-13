@@ -20,6 +20,7 @@
 
 // C++ system
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -126,10 +127,17 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->get_parameter("imu_topic", imu_topic);
   imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic, 10);
 
+  // Setup topic for velocity.
   std::string velocity_topic;
   this->declare_parameter("velocity_topic", "velocity");
   this->get_parameter("velocity_topic", velocity_topic);
   velocity_publisher_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(velocity_topic, 10);
+
+  // Setup topic for battery.
+  std::string battery_topic;
+  this->declare_parameter("battery_topic", "battery");
+  this->get_parameter("battery_topic", battery_topic);
+  battery_publisher_ = this->create_publisher<sensor_msgs::msg::BatteryState>(battery_topic, 10);
 
   // Setup topic for joystick.
   std::string joy_topic;
@@ -211,6 +219,13 @@ void Component::publish_velocity(const geometry_msgs::msg::TwistStamped & msg)
   }
 }
 
+void Component::publish_battery(const sensor_msgs::msg::BatteryState & msg)
+{
+  if (battery_publisher_) {
+    battery_publisher_->publish(msg);
+  }
+}
+
 void Component::update_occlusion_state(const SurviveSimpleObject * object, FLT pose_timecode)
 {
   if (object == nullptr) {
@@ -289,6 +304,7 @@ void Component::work()
             auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
             if (timecode > 0) {
               const std::string serial = survive_simple_serial_number(pose_event->object);
+
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
               pose_msg.header.frame_id = tracking_frame_;
@@ -318,6 +334,25 @@ void Component::work()
                 velocity_msg.twist.angular.y = angular_body.y();
                 velocity_msg.twist.angular.z = angular_body.z();
                 publish_velocity(velocity_msg);
+              }
+
+              SurviveObject * so = survive_simple_get_survive_object(pose_event->object);
+              if (so != nullptr) {
+                sensor_msgs::msg::BatteryState battery_msg;
+                battery_msg.header.stamp = pose_msg.header.stamp;
+                battery_msg.header.frame_id = serial;
+                battery_msg.present = so->ison;
+
+                if (so->charge >= 0 && so->charge <= 100) {
+                  battery_msg.percentage = static_cast<float>(so->charge) / 100.0F;
+                } else {
+                  battery_msg.percentage = std::numeric_limits<float>::quiet_NaN();
+                }
+
+                battery_msg.power_supply_status = so->charging
+                  ? sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING
+                  : sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+                publish_battery(battery_msg);
               }
 
               update_occlusion_state(pose_event->object, timecode);
