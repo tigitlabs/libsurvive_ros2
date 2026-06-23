@@ -18,15 +18,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// C system
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
+
 // C++ system
 #include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2/LinearMath/Vector3.h>
 
 // Other
 #include "libsurvive_ros2/component.hpp"
@@ -130,7 +131,8 @@ Component::Component(const rclcpp::NodeOptions & options)
   std::string velocity_topic;
   this->declare_parameter("velocity_topic", "velocity");
   this->get_parameter("velocity_topic", velocity_topic);
-  velocity_publisher_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(velocity_topic, 10);
+  velocity_publisher_ =
+    this->create_publisher<geometry_msgs::msg::TwistStamped>(velocity_topic, 10);
 
   // Setup topic for battery.
   std::string battery_topic;
@@ -269,9 +271,9 @@ void Component::publish_device_battery(
     battery_msg.percentage = std::numeric_limits<float>::quiet_NaN();
   }
 
-  battery_msg.power_supply_status = so->charging
-    ? sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING
-    : sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+  battery_msg.power_supply_status = so->charging ?
+    sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING :
+    sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
   publish_battery(battery_msg);
 }
 
@@ -353,7 +355,8 @@ void Component::publish_device_confidence(
 void Component::publish_device_occlusion(const std::string & serial, bool occluded, FLT timecode)
 {
   libsurvive_ros2::msg::OcclusionStatus msg;
-  msg.header.stamp = (timecode > 0.0F) ? get_ros_time("occlusion", timecode) : this->get_clock()->now();
+  msg.header.stamp =
+    (timecode > 0.0F) ? get_ros_time("occlusion", timecode) : this->get_clock()->now();
   msg.header.frame_id = serial;
   msg.occluded = occluded;
   occlusion_publisher_->publish(msg);

@@ -39,11 +39,11 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # Fetch and build libsurvive during configure.
 include(FetchContent)
-FetchContent_Declare(
+fetchcontent_declare(
   libsurvive_src
   GIT_REPOSITORY https://github.com/cntools/libsurvive.git
   GIT_TAG 2f4303c76f53be1919d89d801172fddd7b09aa7a)
-FetchContent_MakeAvailable(libsurvive_src)
+fetchcontent_makeavailable(libsurvive_src)
 
 if(TARGET survive)
   set(LIBSURVIVE_TARGET survive)
@@ -79,12 +79,13 @@ include_directories(include)
 add_library(libsurvive_ros2_component SHARED src/component.cpp)
 target_include_directories(
   libsurvive_ros2_component
-  PUBLIC ${libsurvive_src_SOURCE_DIR}/include
-         ${libsurvive_src_SOURCE_DIR}/include/libsurvive
-         ${libsurvive_src_SOURCE_DIR}/redist)
+  PUBLIC
+  ${libsurvive_src_SOURCE_DIR}/include
+  ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+  ${libsurvive_src_SOURCE_DIR}/redist)
 target_link_libraries(libsurvive_ros2_component ${LIBSURVIVE_TARGET})
 target_compile_definitions(libsurvive_ros2_component
-                           PRIVATE "COMPOSITION_BUILDING_DLL")
+  PRIVATE "COMPOSITION_BUILDING_DLL")
 ament_target_dependencies(
   libsurvive_ros2_component
   rclcpp
@@ -95,7 +96,7 @@ ament_target_dependencies(
   tf2
   tf2_ros)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
-                              "rosidl_typesupport_cpp")
+  "rosidl_typesupport_cpp")
 target_link_libraries(libsurvive_ros2_component ${cpp_typesupport_target})
 
 # Manually compose the component into a node
