@@ -48,6 +48,7 @@ def generate_launch_description():
             'cfg_topic': 'cfg',
             'velocity_topic': 'velocity',
             'battery_topic': 'battery',
+            'confidence_topic': 'confidence',
             'occlusion_topic': 'occlusion',
             'lighthouse_rate': 4.0,
         }])
