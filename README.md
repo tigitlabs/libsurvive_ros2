@@ -122,13 +122,8 @@ $ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
 There are launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
-- `record = boolean (default: false)` : Start a `ros2 bag record` to save `/tf` and `/tf_static` topics to a ros bag in the ROS2 log directory for the current launch ID as `libsurvive.bag`.
-- `composable = boolean (default: false)`: For advanced users only -- it shows how to load the component-based version of the code to get zero-copy IPC between it and other composable nodes. 
-- `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
-- `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
-- `velocity_topic = string (default: 'velocity')`: Topic for per-device velocity (`geometry_msgs/TwistStamped`).
-- `battery_topic = string (default: 'battery')`: Topic for per-device battery state (`sensor_msgs/BatteryState`).
-- `occlusion_topic = string (default: 'occlusion')`: Occlusion status topic (`libsurvive_ros2/msg/OcclusionStatus`).
+- `config_dir = string (default: package `config`)`: Directory containing the persistent libsurvive calibration config.
+- `force_recalibrate = boolean (default: false)`: Clear the stored calibration before launching. Use this after moving the lighthouses or changing the tracking environment.
 
 Occlusion monitor behavior:
 
@@ -151,10 +146,9 @@ Velocity and battery behavior:
 
 - **How do I configure this for my specific tracker ID?** There's no need -- the libsurvive driver will enumerate all devices, query their ID and publish this ID as the transform name using the TF2 standard topic `/tf`. Base station positions change less frequently, and so they are published at a lowe rate on `/tf_static`.
 
-- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not room-aligned by default. In other words, this frame is internally consistent for tracking, but it does not automatically match your real room axes (for example north/forward), and it can vary across runs depending on initialization conditions. To fix this, you should provide your own static transform between your application world frame and `libsurvive_world`.
+- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not map-aligned by default. Applications that require `map` should provide their own `map -> libsurvive_world` transform.
 
-- **When should I override `config_path`?** Pass `config_path:=/path/to/config.json` when you want to use a calibration file that matches your active lighthouse installation and room setup.
+- The launch reuses the stored calibration by default. Pass `force_recalibrate:=true` after changing the lighthouse installation.
+- Runtime global-scene refinement is disabled to keep `libsurvive_world` stable after initial calibration. Tracking-loss recovery remains enabled.
 
 - **In need to send extra arguments to the driver** -- Have a look at the `libsurvive_ros2.launch.py` file, and particularly at the `parameters` variable. You should probably be writing your own launch file, and you can include custom modifications for your specific tracking setup by changing the parameters you pass to the driver.
-
-

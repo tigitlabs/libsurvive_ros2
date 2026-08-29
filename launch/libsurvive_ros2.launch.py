@@ -38,17 +38,11 @@ def _launch_setup(context):
     config_dir = LaunchConfiguration('config_dir').perform(context).strip()
     force_recalibrate = LaunchConfiguration(
         'force_recalibrate').perform(context).strip()
-    if config_dir:
+    if config_dir and force_recalibrate == 'true':
         _clear_existing_config(config_dir)
 
-    driver_args = ''
-    if force_recalibrate == 'true':
-        driver_args = '--force-recalibrate 1'
-        if config_dir:
-            driver_args += f' -c {config_dir}/libsurvive/config.json'
-
     parameters = [
-        {'driver_args': driver_args},
+        {'driver_args': '--disable-calibrate'},
         {'imu_topic': 'imu'},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
@@ -85,7 +79,8 @@ def generate_launch_description():
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
         DeclareLaunchArgument('force_recalibrate', default_value='false',
-                              description='Whether to force a fresh libsurvive calibration'),
+                              choices=['true', 'false'],
+                              description='Clear stored calibration before launch'),
         DeclareLaunchArgument('config_dir', default_value=default_config_dir,
                               description=('Path to a libsurvive calibration config directory. '
                                            f'Default: {default_config_dir}')),
