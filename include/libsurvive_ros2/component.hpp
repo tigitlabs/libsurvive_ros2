@@ -18,8 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef LIBSURVIVE_ROS2__COMPONENT_HPP_
-#define LIBSURVIVE_ROS2__COMPONENT_HPP_
+#pragma once
 
 #define SURVIVE_ENABLE_FULL_API
 
@@ -29,11 +28,9 @@
 // C++ system
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <vector>
 
 // Other
 #include "diagnostic_msgs/msg/key_value.hpp"
@@ -80,7 +77,7 @@ private:
   std::thread worker_thread_;
   rclcpp::Time last_base_station_update_;
   std::unordered_map<std::string, int64_t> last_battery_publish_ns_by_device_;
-  std::string tracking_frame_;
+  std::string parent_frame_;
   std::string occlusion_topic_base_;
   std::unordered_map<std::string, bool> occlusion_by_device_;
   std::unordered_map<std::string, int> occlusion_enter_count_by_device_;
@@ -89,5 +86,3 @@ private:
 };
 
 } // namespace libsurvive_ros2
-
-#endif // LIBSURVIVE_ROS2__COMPONENT_HPP_

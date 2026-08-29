@@ -18,51 +18,47 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import os
+from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
-
-import launch
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
-from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import ComposableNodeContainer, Node
-from launch_ros.descriptions import ComposableNode
-
-# Bag to save data
-BAG_FILE = os.path.join(launch.logging.launch_config.log_dir, 'libsurvive.bag')
-
-# Default libsurvive configuration file
-CFG_FILE = os.path.join(
-    get_package_share_directory('libsurvive_ros2'), 'config', 'config.json'
-)
-
-# Sow we don't have to repeat for composable and non-composable versions.
-PARAMETERS = [
-    {'driver_args': f'--force-recalibrate 1 -c {CFG_FILE}'},
-    {'tracking_frame': 'libsurvive_world'},
-    {'imu_topic': 'imu'},
-    {'velocity_topic': LaunchConfiguration('velocity_topic')},
-    {'joy_topic': 'joy'},
-    {'cfg_topic': 'cfg'},
-    {'lighthouse_rate': 4.0}]
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
-def generate_launch_description():
-    arguments = [
-        DeclareLaunchArgument('namespace', default_value='libsurvive',
-                              description='Namespace for the non-TF topics'),
-        DeclareLaunchArgument('composable', default_value='false',
-                              description='Launch in a composable container'),
-        DeclareLaunchArgument('rosbridge', default_value='false',
-                              description='Launch a rosbridge'),
-        DeclareLaunchArgument('foxbridge', default_value='false',
-                              description='Launch a foxglove bridge'),
-        DeclareLaunchArgument('velocity_topic', default_value='velocity',
-                              description='Topic name for per-device velocity stream'),
-        DeclareLaunchArgument('record', default_value='false',
-                              description='Record data with rosbag')]
+def _clear_existing_config(config_dir):
+    config_root = Path(config_dir) / 'libsurvive'
+    config_root.mkdir(parents=True, exist_ok=True)
+    config_file = config_root / 'config.json'
+    config_file.write_text('', encoding='utf-8')
+
+
+def _launch_setup(context):
+    config_dir = LaunchConfiguration('config_dir').perform(context).strip()
+    force_recalibrate = LaunchConfiguration(
+        'force_recalibrate').perform(context).strip()
+    if config_dir:
+        _clear_existing_config(config_dir)
+
+    driver_args = ''
+    if force_recalibrate == 'true':
+        driver_args = '--force-recalibrate 1'
+        if config_dir:
+            driver_args += f' -c {config_dir}/libsurvive/config.json'
+
+    parameters = [
+        {'driver_args': driver_args},
+        {'imu_topic': 'imu'},
+        {'joy_topic': 'joy'},
+        {'cfg_topic': 'cfg'},
+        {'velocity_topic': 'velocity'},
+        {'battery_topic': 'battery'},
+        {'occlusion_topic': 'occlusion'},
+        {'lighthouse_rate': 4.0}
+    ]
+
+    extra_env = {'XDG_CONFIG_HOME': config_dir} if config_dir else {}
 
     # Non-composable launch (regular node)
     libsurvive_node = Node(
@@ -70,73 +66,29 @@ def generate_launch_description():
         executable='libsurvive_ros2_node',
         name='libsurvive_ros2_node',
         namespace=LaunchConfiguration('namespace'),
-        condition=UnlessCondition(LaunchConfiguration('composable')),
         output='screen',
-        parameters=PARAMETERS)
+        additional_env=extra_env,
+        parameters=parameters)
 
-    # Composable launch (zero-copy node example)
-    libsurvive_composable_node = ComposableNodeContainer(
-        package='rclcpp_components',
-        executable='component_container',
-        name='libsurvive_ros2_container',
-        namespace=LaunchConfiguration('namespace'),
-        condition=IfCondition(LaunchConfiguration('composable')),
-        composable_node_descriptions=[
-            ComposableNode(
-                package='libsurvive_ros2',
-                plugin='libsurvive_ros2::Component',
-                name='libsurvive_ros2_component',
-                parameters=PARAMETERS,
-                extra_arguments=[
-                    {'use_intra_process_comms': True}
-                ]
-            )
-        ],
-        output='log')
+    return [
+        libsurvive_node,
+    ]
 
-    # For ros webdocker bridge
-    rosbridge_node = Node(
-        package='rosbridge_server',
-        executable='rosbridge_websocket',
-        name='rosbridge_server_node',
-        condition=IfCondition(LaunchConfiguration('rosbridge')),
-        parameters=[
-            {'port': 9090},
-        ],
-        output='log')
-    rosapi_node = Node(
-        package='rosapi',
-        executable='rosapi_node',
-        name='rosapi_node',
-        condition=IfCondition(LaunchConfiguration('rosbridge')),
-        output='log')
 
-    # For foxglove websocket bridge.
-    foxbridge_node = Node(
-        package='foxglove_bridge',
-        executable='foxglove_bridge',
-        name='foxglove_bridge',
-        condition=IfCondition(LaunchConfiguration('foxbridge')),
-        parameters=[
-            {'port': 8765},
-        ],
-        output='log')
+def generate_launch_description():
+    default_config_dir = PathJoinSubstitution([
+        FindPackageShare('libsurvive_ros2'),
+        'config'
+    ])
 
-    # For recording all data from the experiment
-    bag_record_node = ExecuteProcess(
-        cmd=['ros2', 'bag', 'record', '-o', BAG_FILE] + [
-            '/tf',
-            '/tf_static'
-        ],
-        condition=IfCondition(LaunchConfiguration('record')),
-        output='log')
+    arguments = [
+        DeclareLaunchArgument('namespace', default_value='libsurvive',
+                              description='Namespace for the non-TF topics'),
+        DeclareLaunchArgument('force_recalibrate', default_value='false',
+                              description='Whether to force a fresh libsurvive calibration'),
+        DeclareLaunchArgument('config_dir', default_value=default_config_dir,
+                              description=('Path to a libsurvive calibration config directory. '
+                                           f'Default: {default_config_dir}')),
+    ]
 
-    return LaunchDescription(
-        arguments + [
-            libsurvive_node,
-            libsurvive_composable_node,
-            foxbridge_node,
-            rosbridge_node,
-            rosapi_node,
-            bag_record_node
-        ])
+    return LaunchDescription(arguments + [OpaqueFunction(function=_launch_setup)])

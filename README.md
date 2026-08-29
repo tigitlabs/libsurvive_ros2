@@ -15,7 +15,6 @@ Progress:
 
 - [x] code ported
 - [x] documentation added
-- [x] foxglove example
 - [x] test imu callback
 - [x] test connect callback
 - [x] fix timestamp errors
@@ -35,7 +34,7 @@ Before you do anything, you will need to install these udev rules and reload the
 ```
 sudo curl -fsSL https://raw.githubusercontent.com/cntools/libsurvive/master/useful_files/81-vive.rules \
     -o /etc/udev/rules.d/81-vive.rules
-sudo udevadm control --reload-rules && udevadm trigger
+sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 You can now choose to build the driver natively or in a container. The benefit of launching it within a container is that it won't interfere with any pre-existing ROS installation on your machine. However, you will need docker-ce and the compose plugin for things to work.
@@ -117,25 +116,34 @@ $ docker compose up
 Alternatively, to run the driver on native installations run the following:
 
 ```sh
-$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py rosbridge:=true
+$ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
 ```
 
-There are three launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
+There are launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
 - `record = boolean (default: false)` : Start a `ros2 bag record` to save `/tf` and `/tf_static` topics to a ros bag in the ROS2 log directory for the current launch ID as `libsurvive.bag`.
-- `foxbridge = boolean (default: false)` : Starts a `foxglove_bridge` to push data over a websocket at point 8765 (high performance).
-- `rosbridge = boolean (default: false)` : Starts a `rosbridge_server` and `rosapi` node to push data over a websocket at 9090 (more flexible).
 - `composable = boolean (default: false)`: For advanced users only -- it shows how to load the component-based version of the code to get zero-copy IPC between it and other composable nodes. 
+- `config_path = string (default: package `config/config.json`)`: Path to a libsurvive calibration config file.
+- `force_recalibrate = boolean (default: false)`: Request a fresh libsurvive calibration run.
+- `velocity_topic = string (default: 'velocity')`: Topic for per-device velocity (`geometry_msgs/TwistStamped`).
+- `battery_topic = string (default: 'battery')`: Topic for per-device battery state (`sensor_msgs/BatteryState`).
+- `occlusion_topic = string (default: 'occlusion')`: Occlusion status topic (`libsurvive_ros2/msg/OcclusionStatus`).
 
-# Example visualization with Foxglove
+Occlusion monitor behavior:
 
-After launch the stack (with `rosbridge:=true`), navigate to [this Foxglove link](https://studio.foxglove.dev/?ds=rosbridge-websocket&ds.url=ws%3A%2F%2Flocalhost%3A9090
-) and you should see the data streaming:
+- `/<namespace>/<occlusion_topic>` publishes `libsurvive_ros2/msg/OcclusionStatus`.
+- `header.frame_id` contains the device serial (same style as `/imu`), and `occluded` is the per-device occlusion flag.
+- `occluded=true` means the corresponding tracked non-lighthouse device is considered occluded.
+- The driver estimates occlusion from libsurvive internal timing by tracking age of each object's latest optical update (`last_light`) against current libsurvive runtime.
+- Occlusion thresholds and debounce counts are intentionally fixed in code for stable behavior.
 
-![alt text](doc/foxglove.png)
+Velocity and battery behavior:
 
-Now move the tracker around and you should see its corresponding transform move around inn the user interface.
+- `/<namespace>/<velocity_topic>` publishes `geometry_msgs/TwistStamped`.
+- `header.frame_id` is the device serial; `twist.linear` and `twist.angular` are expressed in the device local frame.
+- `/<namespace>/<battery_topic>` publishes `sensor_msgs/BatteryState`.
+- `header.frame_id` is the device serial; `percentage` and charging/discharging status are populated from libsurvive object state.
 
 # Common questions
 
@@ -143,7 +151,9 @@ Now move the tracker around and you should see its corresponding transform move 
 
 - **How do I configure this for my specific tracker ID?** There's no need -- the libsurvive driver will enumerate all devices, query their ID and publish this ID as the transform name using the TF2 standard topic `/tf`. Base station positions change less frequently, and so they are published at a lowe rate on `/tf_static`.
 
-- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations. It has no idea of their orientation with respect to the room. To fix this, you will need to write your own static transform broadcaster to provide the relationship between your world frame and the `libsurvive_world` frame.
+- **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not room-aligned by default. In other words, this frame is internally consistent for tracking, but it does not automatically match your real room axes (for example north/forward), and it can vary across runs depending on initialization conditions. To fix this, you should provide your own static transform between your application world frame and `libsurvive_world`.
+
+- **When should I override `config_path`?** Pass `config_path:=/path/to/config.json` when you want to use a calibration file that matches your active lighthouse installation and room setup.
 
 - **In need to send extra arguments to the driver** -- Have a look at the `libsurvive_ros2.launch.py` file, and particularly at the `parameters` variable. You should probably be writing your own launch file, and you can include custom modifications for your specific tracking setup by changing the parameters you pass to the driver.
 

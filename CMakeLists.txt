@@ -7,16 +7,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 # Declare the minimum cmake version
 cmake_minimum_required(VERSION 3.5)
@@ -60,7 +60,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_components REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -75,18 +74,18 @@ rosidl_generate_interfaces(${PROJECT_NAME} "msg/OcclusionStatus.msg"
 include_directories(include)
 
 # Add the component
-add_library(libsurvive_ros2_component SHARED
-  src/component.cpp)
-target_include_directories(libsurvive_ros2_component PUBLIC
-  ${libsurvive_src_SOURCE_DIR}/include
-  ${libsurvive_src_SOURCE_DIR}/include/libsurvive
-  ${libsurvive_src_SOURCE_DIR}/redist)
+add_library(libsurvive_ros2_component SHARED src/component.cpp)
+target_include_directories(
+  libsurvive_ros2_component
+  PUBLIC ${libsurvive_src_SOURCE_DIR}/include
+         ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+         ${libsurvive_src_SOURCE_DIR}/redist)
 target_link_libraries(libsurvive_ros2_component ${LIBSURVIVE_TARGET})
 target_compile_definitions(libsurvive_ros2_component
-  PRIVATE "COMPOSITION_BUILDING_DLL")
-ament_target_dependencies(libsurvive_ros2_component
+                           PRIVATE "COMPOSITION_BUILDING_DLL")
+ament_target_dependencies(
+  libsurvive_ros2_component
   rclcpp
-  rclcpp_components
   diagnostic_msgs
   geometry_msgs
   sensor_msgs
@@ -96,35 +95,24 @@ ament_target_dependencies(libsurvive_ros2_component
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
                               "rosidl_typesupport_cpp")
 target_link_libraries(libsurvive_ros2_component ${cpp_typesupport_target})
-rclcpp_components_register_nodes(libsurvive_ros2_component "libsurvive_ros2::Component")
 
 # Manually compose the component into a node
-add_executable(libsurvive_ros2_node
-  src/node.cpp)
-target_link_libraries(libsurvive_ros2_node
-  libsurvive_ros2_component)
+add_executable(libsurvive_ros2_node src/node.cpp)
+target_link_libraries(libsurvive_ros2_node libsurvive_ros2_component)
 ament_target_dependencies(libsurvive_ros2_node rclcpp)
 
 # Install the component
 install(
-  TARGETS
-    libsurvive_ros2_component
+  TARGETS libsurvive_ros2_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 
 # Install the node
-install(
-  TARGETS
-    libsurvive_ros2_node
-  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS libsurvive_ros2_node DESTINATION lib/${PROJECT_NAME})
 
 # Install the shared things
-install(
-  DIRECTORY
-    config
-    launch
-  DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 # For testing only
 if(BUILD_TESTING)
