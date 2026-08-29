@@ -18,31 +18,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from pathlib import Path
-
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
-
-
-def _clear_existing_config(config_dir):
-    config_root = Path(config_dir) / 'libsurvive'
-    config_root.mkdir(parents=True, exist_ok=True)
-    config_file = config_root / 'config.json'
-    config_file.write_text('', encoding='utf-8')
 
 
 def _launch_setup(context):
-    config_dir = LaunchConfiguration('config_dir').perform(context).strip()
     force_recalibrate = LaunchConfiguration(
         'force_recalibrate').perform(context).strip()
-    if config_dir and force_recalibrate == 'true':
-        _clear_existing_config(config_dir)
+    driver_args = '--disable-calibrate'
+    if force_recalibrate == 'true':
+        driver_args = '--force-calibrate --disable-calibrate'
 
     parameters = [
-        {'driver_args': '--disable-calibrate'},
+        {'driver_args': driver_args},
         {'imu_topic': 'imu'},
         {'joy_topic': 'joy'},
         {'cfg_topic': 'cfg'},
@@ -52,8 +42,6 @@ def _launch_setup(context):
         {'lighthouse_rate': 4.0}
     ]
 
-    extra_env = {'XDG_CONFIG_HOME': config_dir} if config_dir else {}
-
     # Non-composable launch (regular node)
     libsurvive_node = Node(
         package='libsurvive_ros2',
@@ -61,7 +49,6 @@ def _launch_setup(context):
         name='libsurvive_ros2_node',
         namespace=LaunchConfiguration('namespace'),
         output='screen',
-        additional_env=extra_env,
         parameters=parameters)
 
     return [
@@ -70,20 +57,12 @@ def _launch_setup(context):
 
 
 def generate_launch_description():
-    default_config_dir = PathJoinSubstitution([
-        FindPackageShare('libsurvive_ros2'),
-        'config'
-    ])
-
     arguments = [
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
         DeclareLaunchArgument('force_recalibrate', default_value='false',
                               choices=['true', 'false'],
-                              description='Clear stored calibration before launch'),
-        DeclareLaunchArgument('config_dir', default_value=default_config_dir,
-                              description=('Path to a libsurvive calibration config directory. '
-                                           f'Default: {default_config_dir}')),
+                              description='Recompute Lighthouse poses at startup'),
     ]
 
     return LaunchDescription(arguments + [OpaqueFunction(function=_launch_setup)])

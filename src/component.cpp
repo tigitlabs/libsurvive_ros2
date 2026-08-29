@@ -160,17 +160,22 @@ Component::Component(const rclcpp::NodeOptions & options)
 
   // Setup driver parameters.
   std::string driver_args;
-  this->declare_parameter("driver_args", "--force-recalibrate 1");
+  this->declare_parameter("driver_args", "--disable-calibrate");
   this->get_parameter("driver_args", driver_args);
-  std::vector<const char *> args;
+  std::vector<std::string> args{"libsurvive_ros2"};
   std::stringstream driver_ss(driver_args);
   std::string token;
-  while (getline(driver_ss, token, ' ')) {
-    args.emplace_back(token.c_str());
+  while (driver_ss >> token) {
+    args.emplace_back(token);
+  }
+  std::vector<char *> arg_ptrs;
+  arg_ptrs.reserve(args.size());
+  for (auto & arg : args) {
+    arg_ptrs.emplace_back(arg.data());
   }
 
   // Try and initialize survive with the arguments supplied.
-  actx_ = survive_simple_init(args.size(), const_cast<char **>(args.data()));
+  actx_ = survive_simple_init(static_cast<int>(arg_ptrs.size()), arg_ptrs.data());
   if (actx_ == nullptr) {
     RCLCPP_FATAL(this->get_logger(), "Could not initialize the libsurvive context");
     return;

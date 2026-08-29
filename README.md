@@ -122,8 +122,7 @@ $ ros2 launch libsurvive_ros2 libsurvive_ros2.launch.py
 There are launch arguments to `libsurvive_ros2.launch.py` to help get up and running:
 
 - `namespace = string (default: 'libsurvive')` : This is the namespace on which to add the extra topics for sensor data.
-- `config_dir = string (default: package `config`)`: Directory containing the persistent libsurvive calibration config.
-- `force_recalibrate = boolean (default: false)`: Clear the stored calibration before launching. Use this after moving the lighthouses or changing the tracking environment.
+- `force_recalibrate = boolean (default: false)`: Recompute the stored Lighthouse poses at startup. Use this after moving the Lighthouses or changing the tracking environment.
 
 Occlusion monitor behavior:
 
@@ -148,7 +147,7 @@ Velocity and battery behavior:
 
 - **The base stations locations are not where I'd expect them to be** -- The calibration phase of libsurvive works out the relative location of the base stations automatically, but the orientation of `libsurvive_world` is not map-aligned by default. Applications that require `map` should provide their own `map -> libsurvive_world` transform.
 
-- The launch reuses the stored calibration by default. Pass `force_recalibrate:=true` after changing the lighthouse installation.
+- The launch uses libsurvive's native configuration file (`~/.config/libsurvive/config.json`) and reuses the stored calibration by default. Pass `force_recalibrate:=true` after changing the Lighthouse installation; this preserves the existing OOTX data while recomputing the Lighthouse poses.
 - Runtime global-scene refinement is disabled to keep `libsurvive_world` stable after initial calibration. Tracking-loss recovery remains enabled.
 
 - **In need to send extra arguments to the driver** -- Have a look at the `libsurvive_ros2.launch.py` file, and particularly at the `parameters` variable. You should probably be writing your own launch file, and you can include custom modifications for your specific tracking setup by changing the parameters you pass to the driver.

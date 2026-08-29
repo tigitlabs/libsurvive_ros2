@@ -112,7 +112,7 @@ install(
 install(TARGETS libsurvive_ros2_node DESTINATION lib/${PROJECT_NAME})
 
 # Install the shared things
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 # For testing only
 if(BUILD_TESTING)
