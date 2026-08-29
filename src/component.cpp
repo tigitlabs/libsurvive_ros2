@@ -19,6 +19,8 @@
 // THE SOFTWARE.
 
 // C++ system
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,6 +35,11 @@
 
 // Scale factor to move from G to m/s^2.
 constexpr double SI_GRAVITY = 9.80665;
+constexpr int64_t BATTERY_PUBLISH_PERIOD_NS = 1000000000LL;
+constexpr double OCCLUSION_ENTER_TIMEOUT_SEC = 0.2;
+constexpr double OCCLUSION_EXIT_TIMEOUT_SEC = 0.08;
+constexpr int OCCLUSION_ENTER_SAMPLES = 3;
+constexpr int OCCLUSION_EXIT_SAMPLES = 5;
 
 // We can only ever load one version of the driver, so we store a pointer to the instance of the
 // driver here, so the IMU callback can push data to it.
@@ -77,6 +84,26 @@ static tf2::Quaternion body_from_world_quaternion(const SurvivePose & pose)
   return q_world_from_body.inverse();
 }
 
+static bool compute_raw_occluded(
+  SurviveObject * so, bool previous_state)
+{
+  if (so == nullptr || so->activations.last_light <= 0) {
+    return true;
+  }
+
+  const double now_sec = survive_run_time_since_epoch(so->ctx);
+  const double last_light_sec = static_cast<double>(
+    SurviveSensorActivations_runtime(&so->activations, so->activations.last_light)) / 1e6;
+  const double dt_since_last_light_sec = now_sec - last_light_sec;
+
+  if (dt_since_last_light_sec <= 0.0) {
+    return false;
+  }
+
+  const double timeout = previous_state ? OCCLUSION_EXIT_TIMEOUT_SEC : OCCLUSION_ENTER_TIMEOUT_SEC;
+  return dt_since_last_light_sec > timeout;
+}
+
 namespace libsurvive_ros2
 {
 
@@ -101,10 +128,17 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->get_parameter("imu_topic", imu_topic);
   imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic, 10);
 
+  // Setup topic for velocity.
   std::string velocity_topic;
   this->declare_parameter("velocity_topic", "velocity");
   this->get_parameter("velocity_topic", velocity_topic);
   velocity_publisher_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(velocity_topic, 10);
+
+  // Setup topic for battery.
+  std::string battery_topic;
+  this->declare_parameter("battery_topic", "battery");
+  this->get_parameter("battery_topic", battery_topic);
+  battery_publisher_ = this->create_publisher<sensor_msgs::msg::BatteryState>(battery_topic, 10);
 
   // Setup topic for joystick.
   std::string joy_topic;
@@ -117,6 +151,12 @@ Component::Component(const rclcpp::NodeOptions & options)
   this->declare_parameter("cfg_topic", "cfg");
   this->get_parameter("cfg_topic", cfg_topic);
   cfg_publisher_ = this->create_publisher<diagnostic_msgs::msg::KeyValue>(cfg_topic, 10);
+
+  // Setup topic for occlusion status.
+  this->declare_parameter("occlusion_topic", "occlusion");
+  this->get_parameter("occlusion_topic", occlusion_topic_base_);
+  occlusion_publisher_ =
+    this->create_publisher<libsurvive_ros2::msg::OcclusionStatus>(occlusion_topic_base_, 10);
 
   // Setup driver parameters.
   std::string driver_args;
@@ -180,6 +220,112 @@ void Component::publish_velocity(const geometry_msgs::msg::TwistStamped & msg)
   }
 }
 
+void Component::publish_battery(const sensor_msgs::msg::BatteryState & msg)
+{
+  if (battery_publisher_) {
+    battery_publisher_->publish(msg);
+  }
+}
+
+void Component::publish_device_battery(
+  const SurviveSimpleObject * object, const rclcpp::Time & stamp)
+{
+  if (object == nullptr) {
+    return;
+  }
+
+  SurviveObject * so = survive_simple_get_survive_object(object);
+  if (so == nullptr) {
+    return;
+  }
+
+  const std::string serial = survive_simple_serial_number(object);
+  if (serial.empty()) {
+    return;
+  }
+
+  const int64_t stamp_ns = stamp.nanoseconds();
+  auto it = last_battery_publish_ns_by_device_.find(serial);
+  if (
+    it != last_battery_publish_ns_by_device_.end() &&
+    stamp_ns - it->second < BATTERY_PUBLISH_PERIOD_NS)
+  {
+    return;
+  }
+  last_battery_publish_ns_by_device_[serial] = stamp_ns;
+
+  sensor_msgs::msg::BatteryState battery_msg;
+  battery_msg.header.stamp = stamp;
+  battery_msg.header.frame_id = serial;
+  battery_msg.present = so->ison;
+
+  if (so->charge >= 0 && so->charge <= 100) {
+    battery_msg.percentage = static_cast<float>(so->charge) / 100.0F;
+  } else {
+    battery_msg.percentage = std::numeric_limits<float>::quiet_NaN();
+  }
+
+  battery_msg.power_supply_status = so->charging
+    ? sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING
+    : sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+  publish_battery(battery_msg);
+}
+
+void Component::update_occlusion_state(const SurviveSimpleObject * object, FLT pose_timecode)
+{
+  if (object == nullptr) {
+    return;
+  }
+
+  SurviveObject * so = survive_simple_get_survive_object(object);
+  if (so == nullptr) {
+    return;
+  }
+
+  const auto serial = std::string(survive_simple_serial_number(object));
+  if (serial.empty()) {
+    return;
+  }
+
+  const bool previous_state = occlusion_by_device_[serial];
+  const bool raw_occluded = compute_raw_occluded(so, previous_state);
+
+  bool next_state = previous_state;
+  int & enter_count = occlusion_enter_count_by_device_[serial];
+  int & exit_count = occlusion_exit_count_by_device_[serial];
+
+  if (raw_occluded == previous_state) {
+    enter_count = 0;
+    exit_count = 0;
+  } else if (raw_occluded) {
+    exit_count = 0;
+    if (++enter_count >= OCCLUSION_ENTER_SAMPLES) {
+      next_state = true;
+      enter_count = 0;
+    }
+  } else {
+    enter_count = 0;
+    if (++exit_count >= OCCLUSION_EXIT_SAMPLES) {
+      next_state = false;
+      exit_count = 0;
+    }
+  }
+
+  occlusion_by_device_[serial] = next_state;
+  if (next_state != previous_state) {
+    publish_device_occlusion(serial, next_state, pose_timecode);
+  }
+}
+
+void Component::publish_device_occlusion(const std::string & serial, bool occluded, FLT timecode)
+{
+  libsurvive_ros2::msg::OcclusionStatus msg;
+  msg.header.stamp = (timecode > 0.0F) ? get_ros_time("occlusion", timecode) : this->get_clock()->now();
+  msg.header.frame_id = serial;
+  msg.occluded = occluded;
+  occlusion_publisher_->publish(msg);
+}
+
 void Component::work()
 {
   RCLCPP_INFO(this->get_logger(), "Start listening for events..");
@@ -203,6 +349,7 @@ void Component::work()
             auto timecode = survive_simple_object_get_latest_pose(pose_event->object, &pose);
             if (timecode > 0) {
               const std::string serial = survive_simple_serial_number(pose_event->object);
+
               geometry_msgs::msg::TransformStamped pose_msg;
               pose_msg.header.stamp = this->get_ros_time("tracker", timecode);
               pose_msg.header.frame_id = tracking_frame_;
@@ -233,6 +380,10 @@ void Component::work()
                 velocity_msg.twist.angular.z = angular_body.z();
                 publish_velocity(velocity_msg);
               }
+
+              publish_device_battery(pose_event->object, pose_msg.header.stamp);
+
+              update_occlusion_state(pose_event->object, timecode);
             }
           }
           break;
