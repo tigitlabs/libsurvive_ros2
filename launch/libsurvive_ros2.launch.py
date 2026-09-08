@@ -19,50 +19,50 @@
 # THE SOFTWARE.
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import IfElseSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
-def _launch_setup(context):
-    force_recalibrate = LaunchConfiguration(
-        'force_recalibrate').perform(context).strip()
-    driver_args = '--disable-calibrate'
-    if force_recalibrate == 'true':
-        driver_args = '--force-calibrate --disable-calibrate'
+def generate_launch_description():
+    driver_args = ParameterValue([
+        '--lighthouse-gen ', LaunchConfiguration('lighthouse_gen'),
+        ' --force-calibrate ',
+        IfElseSubstitution(LaunchConfiguration('force_recalibrate'), '1', '0'),
+        ' --disable-calibrate ',
+        IfElseSubstitution(LaunchConfiguration('disable_calibrate'), '1', '0'),
+    ], value_type=str)
 
-    parameters = [
-        {'driver_args': driver_args},
-        {'imu_topic': 'imu'},
-        {'joy_topic': 'joy'},
-        {'cfg_topic': 'cfg'},
-        {'velocity_topic': 'velocity'},
-        {'battery_topic': 'battery'},
-        {'occlusion_topic': 'occlusion'},
-        {'lighthouse_rate': 4.0}
-    ]
-
-    # Non-composable launch (regular node)
     libsurvive_node = Node(
         package='libsurvive_ros2',
         executable='libsurvive_ros2_node',
         name='libsurvive_ros2_node',
         namespace=LaunchConfiguration('namespace'),
         output='screen',
-        parameters=parameters)
+        parameters=[{
+            'driver_args': driver_args,
+            'imu_topic': 'imu',
+            'joy_topic': 'joy',
+            'cfg_topic': 'cfg',
+            'velocity_topic': 'velocity',
+            'battery_topic': 'battery',
+            'occlusion_topic': 'occlusion',
+            'lighthouse_rate': 4.0,
+        }])
 
-    return [
-        libsurvive_node,
-    ]
-
-
-def generate_launch_description():
-    arguments = [
+    return LaunchDescription([
         DeclareLaunchArgument('namespace', default_value='libsurvive',
                               description='Namespace for the non-TF topics'),
+        DeclareLaunchArgument('lighthouse_gen', default_value='0',
+                              choices=['0', '1', '2'],
+                              description='Lighthouse generation: 0=auto, 1=1.0, 2=2.0'),
         DeclareLaunchArgument('force_recalibrate', default_value='false',
                               choices=['true', 'false'],
                               description='Recompute Lighthouse poses at startup'),
-    ]
-
-    return LaunchDescription(arguments + [OpaqueFunction(function=_launch_setup)])
+        DeclareLaunchArgument(
+            'disable_calibrate', default_value='true',
+            choices=['true', 'false'],
+            description='Disable continuous refinement by the global scene solver'),
+        libsurvive_node,
+    ])
