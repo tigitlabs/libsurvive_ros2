@@ -46,6 +46,23 @@ FetchContent_Declare(
   GIT_TAG 2f4303c76f53be1919d89d801172fddd7b09aa7a)
 FetchContent_MakeAvailable(libsurvive_src)
 
+# Keep the pinned upstream covariance fix across clean builds and reconfigure.
+find_package(Git REQUIRED)
+set(covariance_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lighthouse-covariance.patch")
+execute_process(
+  COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${covariance_patch}
+  WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
+  RESULT_VARIABLE patch_applied OUTPUT_QUIET ERROR_QUIET)
+if(NOT patch_applied EQUAL 0)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} apply ${covariance_patch}
+    WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
+    RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
+  if(NOT patch_result EQUAL 0)
+    message(FATAL_ERROR "Cannot apply libsurvive covariance fix: ${patch_error}")
+  endif()
+endif()
+
 if(TARGET survive)
   set(LIBSURVIVE_TARGET survive)
 elseif(TARGET libsurvive)
