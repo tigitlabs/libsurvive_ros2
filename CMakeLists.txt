@@ -46,22 +46,24 @@ FetchContent_Declare(
   GIT_TAG f1e6eddb669320f2a30760f4b42936bdb4306da0)
 FetchContent_MakeAvailable(libsurvive_src)
 
-# Keep the pinned upstream covariance fix across clean builds and reconfigure.
+# Carry fixes against the pinned source across clean builds and reconfigure.
 find_package(Git REQUIRED)
-set(covariance_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lighthouse-covariance.patch")
-execute_process(
-  COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${covariance_patch}
-  WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
-  RESULT_VARIABLE patch_applied OUTPUT_QUIET ERROR_QUIET)
-if(NOT patch_applied EQUAL 0)
+foreach(patch_name lighthouse-covariance button-shutdown)
+  set(upstream_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/${patch_name}.patch")
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} apply ${covariance_patch}
+    COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${upstream_patch}
     WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
-    RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
-  if(NOT patch_result EQUAL 0)
-    message(FATAL_ERROR "Cannot apply libsurvive covariance fix: ${patch_error}")
+    RESULT_VARIABLE patch_applied OUTPUT_QUIET ERROR_QUIET)
+  if(NOT patch_applied EQUAL 0)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} apply ${upstream_patch}
+      WORKING_DIRECTORY ${libsurvive_src_SOURCE_DIR}
+      RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error)
+    if(NOT patch_result EQUAL 0)
+      message(FATAL_ERROR "Cannot apply libsurvive ${patch_name} fix: ${patch_error}")
+    endif()
   endif()
-endif()
+endforeach()
 
 if(TARGET survive)
   set(LIBSURVIVE_TARGET survive)
@@ -136,6 +138,31 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 # For testing only
 if(BUILD_TESTING)
+  find_package(ament_cmake_test REQUIRED)
+  find_package(Threads REQUIRED)
+  add_executable(native_shutdown_test test/native_shutdown.c)
+  set_property(TARGET native_shutdown_test PROPERTY C_STANDARD 11)
+  target_include_directories(native_shutdown_test PRIVATE
+    ${libsurvive_src_SOURCE_DIR}/include
+    ${libsurvive_src_SOURCE_DIR}/include/libsurvive
+    ${libsurvive_src_SOURCE_DIR}/src
+    ${libsurvive_src_SOURCE_DIR}/redist
+    ${libsurvive_src_SOURCE_DIR}/libs/cnmatrix/include)
+  target_link_libraries(native_shutdown_test
+    ${LIBSURVIVE_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
+  # The test observes the button thread's context-lock attempt through ELF
+  # interposition, so the queued-event regression does not rely on a sleep.
+  set_property(TARGET native_shutdown_test APPEND_STRING PROPERTY
+    LINK_FLAGS " -Wl,--export-dynamic")
+  foreach(mode idle queued polling)
+    ament_add_test(native_shutdown_${mode}
+      COMMAND "$<TARGET_FILE:native_shutdown_test>" ${mode}
+        "${CMAKE_CURRENT_BINARY_DIR}/native-shutdown-${mode}"
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+      TIMEOUT 5
+      ENV "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:${LIBSURVIVE_TARGET}>")
+  endforeach()
+
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

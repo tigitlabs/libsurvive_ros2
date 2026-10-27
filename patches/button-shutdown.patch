@@ -1,0 +1,25 @@
+--- a/src/survive.c
++++ b/src/survive.c
+@@ -186,6 +186,10 @@
+ 		//	entry->axis2Val);
+ 
+ 		survive_get_ctx_lock(ctx);
++		if (ctx->state != SURVIVE_RUNNING) {
++			survive_release_ctx_lock(ctx);
++			return NULL;
++		}
+ 		survive_recording_button_process(entry->so, entry->eventType, entry->buttonId, entry->ids, entry->axisValues);
+ 		SURVIVE_INVOKE_HOOK_SO(button, entry->so, entry->eventType, entry->buttonId, entry->ids, entry->axisValues);
+ 		survive_release_ctx_lock(ctx);
+@@ -1005,7 +1009,11 @@
+ 
+ 	// unlock/ post to button service semaphore so the thread can kill itself
+ 	OGUnlockSema(ctx->buttonQueue.buttonservicesem);
++	// An already-awake button service may be waiting for the context lock.
++	// Let it finish before reclaiming that lock for driver destruction.
++	survive_release_ctx_lock(ctx);
+ 	OGJoinThread(ctx->buttonservicethread);
++	survive_get_ctx_lock(ctx);
+ 	OGDeleteSema(ctx->buttonQueue.buttonservicesem);
+ 	ctx->buttonQueue.buttonservicesem = 0;
+ 
